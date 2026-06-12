@@ -173,7 +173,7 @@ Then push the email config change through Git and let ArgoCD sync it.
 
 ## Evidence
 
-Use `EVIDENCE.md` for the exact screenshot and clip checklist. Required proof:
+Use `EVIDENCE.md` for the exact screenshot-only checklist. Required proof:
 
 - Git commit plus ArgoCD `Synced/Healthy`.
 - Reproduce from Git on a clean cluster.

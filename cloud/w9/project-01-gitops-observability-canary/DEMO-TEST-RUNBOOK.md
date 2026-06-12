@@ -1,56 +1,90 @@
 # Demo Test Runbook - W9 GitOps Observability Canary
 
-File nay dung de demo/test toan bo he thong bang tay, tung lenh mot. Muc tieu la chung minh du 4 tieu chi:
+Runbook nay chay duoc tu luc khoi dong lab den luc demo day du 4 tieu chi cham bai. Dung PowerShell tren Windows, chay tu repo root `E:\Xbrain\tf_learning`.
 
-1. Thay doi qua Git, ArgoCD `Synced/Healthy`, khong con drift, reproduce duoc tu Git.
-2. `git revert` rollback duoi 5 phut.
-3. SLO alert fire va gui mail ve email ca nhan khi inject loi.
-4. Canary ban loi tu dong abort ve ban cu.
+Tat ca evidence la screenshot PNG luu trong `docs/image/`. Khong quay video.
 
-Runbook nay dung PowerShell tren Windows.
+## 0. Muc Tieu Demo
 
-## 0. Nguyen Tac An Toan
+Sau khi chay xong, ban phai co du 12 screenshot:
+
+| File | Proof |
+| --- | --- |
+| `docs/image/01-git-commit.png` | Git commit bad canary da doi desired state |
+| `docs/image/02-actions-pass.png` | GitHub Actions W9 pass |
+| `docs/image/03-argocd-synced-healthy.png` | ArgoCD apps `Synced/Healthy` |
+| `docs/image/04-no-drift-self-heal.png` | Drift bi ArgoCD self-heal ve Git |
+| `docs/image/05-reproduce-from-git.png` | Clean bootstrap/app-of-apps reproduce tu Git |
+| `docs/image/06-slo-rule-query.png` | Prometheus SLO query co gia tri |
+| `docs/image/07-alert-firing.png` | Alert `W9ApiHighErrorRate` firing |
+| `docs/image/08-alert-email.png` | Email alert da nhan |
+| `docs/image/09-canary-analysis-failed.png` | Bad canary `AnalysisRun` failed |
+| `docs/image/10-canary-auto-aborted.png` | Rollout auto-aborted, giu version tot |
+| `docs/image/11-git-revert-rollback-time.png` | `git revert` rollback duoi 300 giay |
+| `docs/image/12-final-healthy.png` | Final state healthy sau rollback |
+
+## 1. Nguyen Tac An Toan
 
 - Khong commit SMTP password vao Git.
-- Chi commit dia chi email neu ban chap nhan email xuat hien trong Git history.
-- Neu repo public va khong muon lo email ca nhan, hay dung email demo/school email rieng cho bai nop.
-- Tat ca thay doi workload phai di qua Git, khong `kubectl edit`, khong `kubectl set image`.
-- Sau demo phai revert bad canary commit va xoa SMTP secret.
+- SMTP password chi tao bang Kubernetes Secret va xoa sau demo.
+- Tat ca thay doi workload di qua Git: khong `kubectl edit`, khong `kubectl set image`.
+- Bad canary commit phai duoc rollback bang `git revert`.
+- Neu dung email ca nhan trong Git, reset ve placeholder sau demo.
 
-## 1. Chuan Bi Bien Moi Truong
+## 2. Chuan Bi Terminal Va Bien Moi Truong
 
-Mo PowerShell tai root repo:
+Mo PowerShell tai repo root:
 
 ```powershell
 Set-Location E:\Xbrain\tf_learning
 ```
 
-Dat bien project:
+Tao bien dung chung:
 
 ```powershell
 $Project = "cloud/w9/project-01-gitops-observability-canary"
+$ProjectAbs = Join-Path (Get-Location) $Project
 $AppPath = "$Project/apps/w9-api/base/rollout.yaml"
 $AlertPath = "$Project/apps/w9-api/base/alertmanagerconfig.yaml"
+$ImageDir = "$Project/docs/image"
+New-Item -ItemType Directory -Force $ImageDir | Out-Null
+```
+
+Kiem tra tool:
+
+```powershell
+docker version
+git --version
+kubectl version --client
+minikube version
+helm version
+python --version
 ```
 
 Kiem tra Git:
 
 ```powershell
+git branch --show-current
 git status --short
 git log --oneline -5
+git remote -v
 ```
 
 Expected:
 
-- Dang o branch `main`.
-- Khong co thay doi dang stage.
-- Neu co file local khac ngoai project, khong can dung vao trong demo.
+- Branch demo la `main`.
+- Khong co secret/staged file ngoai y muon.
+- Remote tro toi GitHub repo ma ArgoCD dang doc.
 
-Kiem tra context Kubernetes:
+## 3. Khoi Dong Kubernetes W9 Tu Dau
+
+Start minikube profile `w9`:
 
 ```powershell
+minikube start -p w9 --driver=docker --cpus=4 --memory=6144
+kubectl config use-context w9
 kubectl config current-context
-kubectl get nodes
+kubectl get nodes -o wide
 ```
 
 Expected:
@@ -59,52 +93,137 @@ Expected:
 w9
 ```
 
-Neu chua dung context:
+Add/update Helm repos:
 
 ```powershell
-kubectl config use-context w9
+helm repo add argo https://argoproj.github.io/argo-helm --force-update
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
+helm repo update
+helm repo list
 ```
 
-## 2. Baseline: Kiem Tra He Thong Dang Healthy
-
-Kiem tra ArgoCD:
+Build baseline image dang duoc Git khai bao trong `rollout.yaml`:
 
 ```powershell
+Set-Location $ProjectAbs
+minikube image build -p w9 -t w9-api:3 app
+minikube image ls -p w9 | Select-String "w9-api"
+Set-Location E:\Xbrain\tf_learning
+```
+
+Validate source va manifest truoc khi cho ArgoCD sync:
+
+```powershell
+python -m py_compile cloud\w9\project-01-gitops-observability-canary\app\app.py
+kubectl kustomize $Project/apps/w9-api/overlays/dev |
+  Select-String -Pattern "kind: Rollout|kind: AnalysisTemplate|kind: ServiceMonitor|kind: PrometheusRule|kind: AlertmanagerConfig|image: w9-api:3|value: v3"
+```
+
+Neu `py_compile` tao `__pycache__`, xoa file build local:
+
+```powershell
+Get-ChildItem -Path $Project -Recurse -Directory -Filter __pycache__ |
+  Remove-Item -Recurse -Force
+```
+
+## 4. Dam Bao Desired State Da O Tren GitHub
+
+ArgoCD khong doc file local. No doc `targetRevision: main` tu GitHub. Neu co thay doi W9 chua push, commit/push truoc khi cai root app.
+
+Kiem tra:
+
+```powershell
+git status --short
+```
+
+Neu can push desired state hien tai:
+
+```powershell
+git add .github/workflows/w9-validate-on-pr.yml
+git add .github/workflows/w9-gitops-on-merge.yml
+git add cloud/w9/project-01-gitops-observability-canary/app
+git add cloud/w9/project-01-gitops-observability-canary/apps/w9-api
+git add cloud/w9/project-01-gitops-observability-canary/argocd
+git add cloud/w9/project-01-gitops-observability-canary/ci/github-actions
+git add cloud/w9/project-01-gitops-observability-canary/README.md
+git add cloud/w9/project-01-gitops-observability-canary/EVIDENCE.md
+git add cloud/w9/project-01-gitops-observability-canary/DEMO-TEST-RUNBOOK.md
+git commit -m "prepare w9 demo desired state"
+git push origin main
+```
+
+Neu khong co file staged thi `git commit` co the bao nothing to commit. Luc do bo qua va tiep tuc.
+
+## 5. Cai ArgoCD Va App-Of-Apps
+
+Tao namespace va cai ArgoCD:
+
+```powershell
+kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+helm upgrade --install argocd argo/argo-cd -n argocd
+kubectl rollout status deployment/argocd-server -n argocd --timeout=300s
+kubectl get pods -n argocd
+```
+
+Apply root app duy nhat:
+
+```powershell
+kubectl apply -f $Project/argocd/app-of-apps.yaml
 kubectl get applications -n argocd
 ```
 
-Expected:
-
-```text
-argo-rollouts           Synced   Healthy
-kube-prometheus-stack   Synced   Healthy
-w9-api                  Synced   Healthy
-w9-app-of-apps          Synced   Healthy
-```
-
-Kiem tra workload:
+Cho cac app sync/healthy:
 
 ```powershell
+$Apps = @("w9-app-of-apps", "argo-rollouts", "kube-prometheus-stack", "w9-api")
+foreach ($App in $Apps) {
+  do {
+    Start-Sleep -Seconds 15
+    $Sync = kubectl get application $App -n argocd -o jsonpath='{.status.sync.status}' 2>$null
+    $Health = kubectl get application $App -n argocd -o jsonpath='{.status.health.status}' 2>$null
+    Write-Host "$App sync=$Sync health=$Health"
+  } until ($Sync -eq "Synced" -and $Health -eq "Healthy")
+}
+```
+
+Verify cluster state:
+
+```powershell
+kubectl get applications -n argocd
+kubectl get ns
+kubectl get pods -n argo-rollouts
+kubectl get pods -n observability
 kubectl get rollout,pods,svc -n demo
 kubectl get analysistemplate,servicemonitor,prometheusrule,alertmanagerconfig -n demo
 ```
 
-Expected:
+Chup evidence `docs/image/05-reproduce-from-git.png`:
 
-- `rollout/w9-api` co `2/2` available.
-- Co `AnalysisTemplate`.
-- Co `ServiceMonitor`.
-- Co `PrometheusRule`.
-- Co `AlertmanagerConfig`.
+- Terminal hien `git log --oneline -1`.
+- Terminal hien `kubectl get applications -n argocd`.
+- Terminal hien `kubectl get rollout,pods,svc -n demo`.
 
-Chup evidence:
+Mo ArgoCD UI de chup status:
 
-```text
-docs/image/03-argocd-synced-healthy.png
-docs/image/12-final-healthy.png
+```powershell
+$EncodedPassword = kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}"
+$ArgoPassword = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($EncodedPassword))
+Write-Host "ArgoCD user: admin"
+Write-Host "ArgoCD password: $ArgoPassword"
+kubectl port-forward svc/argocd-server -n argocd 8081:443
 ```
 
-## 3. Kiem Tra App, Backend, Metrics
+Mo browser:
+
+```text
+https://localhost:8081
+```
+
+Chup evidence `docs/image/03-argocd-synced-healthy.png` khi ArgoCD hien cac app `Synced/Healthy`.
+
+Dung port-forward bang `Ctrl+C` neu khong can UI nua.
+
+## 6. Smoke Test App Va Metrics
 
 Terminal 1:
 
@@ -116,9 +235,12 @@ Terminal 2:
 
 ```powershell
 Invoke-RestMethod http://localhost:8080/api/status
+Invoke-WebRequest http://localhost:8080/metrics |
+  Select-Object -ExpandProperty Content |
+  Select-String "flask_http_request_total"
 ```
 
-Expected:
+Expected API:
 
 ```text
 version: v3
@@ -127,127 +249,67 @@ frontend: healthy
 backend: healthy
 ```
 
-Kiem tra metrics:
+Tao baseline traffic:
 
 ```powershell
-Invoke-WebRequest http://localhost:8080/metrics | Select-Object -ExpandProperty Content | Select-String "flask_http_request_total"
+1..100 | ForEach-Object {
+  Invoke-RestMethod http://localhost:8080/api/status | Out-Null
+  Start-Sleep -Milliseconds 200
+}
 ```
 
-Dung port-forward bang `Ctrl+C` sau khi test xong.
+Dung port-forward bang `Ctrl+C` khi xong.
 
-## 4. Kiem Tra GitOps No Drift / Self-Heal
+## 7. GitOps No Drift / Self-Heal
 
-Tao drift bang cach scale truc tiep tren cluster:
+Tao drift truc tiep tren cluster:
 
 ```powershell
+kubectl get rollout w9-api -n demo
 kubectl scale rollout w9-api -n demo --replicas=1
 kubectl get rollout w9-api -n demo
 ```
 
-Ep ArgoCD hard refresh:
+Ep ArgoCD refresh va doi self-heal:
 
 ```powershell
 kubectl annotate application w9-api -n argocd argocd.argoproj.io/refresh=hard --overwrite
-```
 
-Watch self-heal:
+do {
+  Start-Sleep -Seconds 10
+  $Replicas = kubectl get rollout w9-api -n demo -o jsonpath='{.spec.replicas}'
+  $Available = kubectl get rollout w9-api -n demo -o jsonpath='{.status.availableReplicas}'
+  $Sync = kubectl get application w9-api -n argocd -o jsonpath='{.status.sync.status}'
+  $Health = kubectl get application w9-api -n argocd -o jsonpath='{.status.health.status}'
+  Write-Host "replicas=$Replicas available=$Available sync=$Sync health=$Health"
+} until ($Replicas -eq "2" -and $Sync -eq "Synced" -and $Health -eq "Healthy")
 
-```powershell
-kubectl get rollout w9-api -n demo -w
-```
-
-Expected:
-
-- Ban dau rollout bi scale xuong `1`.
-- ArgoCD self-heal ve desired state trong Git la `2`.
-
-Kiem tra lai ArgoCD:
-
-```powershell
 kubectl get application w9-api -n argocd
+kubectl get rollout w9-api -n demo
 ```
 
-Chup evidence:
+Chup evidence `docs/image/04-no-drift-self-heal.png` voi output co:
 
-```text
-docs/image/04-no-drift-self-heal.png
-```
+- Drift da scale xuong `1`.
+- ArgoCD dua replicas ve `2`.
+- `w9-api` ve `Synced/Healthy`.
 
-## 5. Cau Hinh Email Alert Qua Git
+## 8. SLO Query Va Observability
 
-Mo file:
+Port-forward app va tao traffic neu chua co:
 
 ```powershell
-notepad $AlertPath
+kubectl port-forward svc/w9-api -n demo 8080:80
 ```
 
-Doi 3 dong placeholder:
-
-```yaml
-to: CHANGE_ME_PERSONAL_EMAIL@example.com
-from: CHANGE_ME_SENDER_EMAIL@example.com
-authUsername: CHANGE_ME_SENDER_EMAIL@example.com
-```
-
-Thanh email that, vi du:
-
-```yaml
-to: your-personal-email@gmail.com
-from: your-sender-email@gmail.com
-authUsername: your-sender-email@gmail.com
-```
-
-Luu y:
-
-- `to` la email nhan alert.
-- `from` va `authUsername` la email gui alert.
-- Neu dung Gmail, can dung App Password, khong dung mat khau Gmail binh thuong.
-- SMTP password khong nam trong file Git.
-
-Commit va push email config:
+Terminal khac:
 
 ```powershell
-git add $AlertPath
-git commit -m "configure w9 alert email"
-git push origin main
+1..80 | ForEach-Object {
+  Invoke-RestMethod http://localhost:8080/api/status | Out-Null
+  Start-Sleep -Milliseconds 250
+}
 ```
-
-Tao SMTP password secret tren cluster:
-
-```powershell
-kubectl create secret generic alertmanager-smtp-auth `
-  -n demo `
-  --from-literal=password="YOUR_SMTP_APP_PASSWORD"
-```
-
-Refresh ArgoCD:
-
-```powershell
-kubectl annotate application w9-api -n argocd argocd.argoproj.io/refresh=hard --overwrite
-kubectl get application w9-api -n argocd
-```
-
-Kiem tra AlertmanagerConfig da apply:
-
-```powershell
-kubectl get alertmanagerconfig w9-api-email-alerts -n demo -o yaml
-```
-
-Kiem tra Alertmanager dang doc config cross-namespace:
-
-```powershell
-kubectl get alertmanager kube-prometheus-stack-alertmanager -n observability -o yaml |
-  Select-String -Pattern "alertmanagerConfigSelector|alertmanagerConfigNamespaceSelector" -Context 0,3
-```
-
-Expected:
-
-```text
-alertmanagerConfigNamespaceSelector: {}
-alertmanagerConfigSelector: {}
-```
-
-## 6. Kiem Tra SLO Query
 
 Port-forward Prometheus:
 
@@ -261,7 +323,7 @@ Mo browser:
 http://localhost:9090
 ```
 
-Query:
+Chay PromQL:
 
 ```promql
 w9_api:slo_success_rate:2m
@@ -269,92 +331,135 @@ w9_api:slo_success_rate:2m
 
 Expected:
 
-- Khi app healthy, gia tri gan `1`.
-- Threshold canh bao la `< 0.98`.
+- Khi app healthy, value gan `1`.
+- Rule threshold alert la `< 0.98`.
 
-Chup evidence:
+Chup evidence `docs/image/06-slo-rule-query.png`.
 
-```text
-docs/image/06-slo-rule-query.png
-```
-
-Dung port-forward bang `Ctrl+C` neu khong dung nua.
-
-## 7. Tao Bad Canary Qua Git
-
-Build image v4 vao minikube:
+Optional Grafana check:
 
 ```powershell
-Set-Location E:\Xbrain\tf_learning\$Project
+kubectl port-forward svc/kube-prometheus-stack-grafana -n observability 3000:80
+```
+
+Mo:
+
+```text
+http://localhost:3000
+username: admin
+password: admin
+```
+
+Dung cac port-forward bang `Ctrl+C` khi xong.
+
+## 9. Cau Hinh Email Alert Qua Git
+
+Dat email nhan/gui. Vi du Gmail thi dung App Password, khong dung password dang nhap Gmail.
+
+```powershell
+$AlertTo = "your-personal-email@gmail.com"
+$AlertFrom = "your-sender-email@gmail.com"
+```
+
+Thay placeholder trong `AlertmanagerConfig`:
+
+```powershell
+(Get-Content $AlertPath) `
+  -replace "CHANGE_ME_PERSONAL_EMAIL@example.com", $AlertTo `
+  -replace "CHANGE_ME_SENDER_EMAIL@example.com", $AlertFrom |
+  Set-Content -Path $AlertPath -Encoding utf8
+```
+
+Kiem tra diff:
+
+```powershell
+git diff -- $AlertPath
+```
+
+Commit va push email route:
+
+```powershell
+git add $AlertPath
+git commit -m "configure w9 alert email"
+git push origin main
+```
+
+Tao SMTP password secret tren cluster, khong ghi password vao Git:
+
+```powershell
+$SmtpPassword = Read-Host "SMTP app password" -AsSecureString
+$Bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SmtpPassword)
+$SmtpPasswordPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto($Bstr)
+kubectl create secret generic alertmanager-smtp-auth `
+  -n demo `
+  --from-literal=password="$SmtpPasswordPlain" `
+  --dry-run=client -o yaml | kubectl apply -f -
+[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($Bstr)
+Remove-Variable SmtpPasswordPlain
+Remove-Variable SmtpPassword
+```
+
+Refresh va kiem tra config:
+
+```powershell
+kubectl annotate application w9-api -n argocd argocd.argoproj.io/refresh=hard --overwrite
+kubectl get application w9-api -n argocd
+kubectl get alertmanagerconfig w9-api-email-alerts -n demo -o yaml
+kubectl get alertmanager kube-prometheus-stack-alertmanager -n observability -o yaml |
+  Select-String -Pattern "alertmanagerConfigSelector|alertmanagerConfigNamespaceSelector" -Context 0,3
+```
+
+Expected:
+
+```text
+alertmanagerConfigNamespaceSelector: {}
+alertmanagerConfigSelector: {}
+```
+
+## 10. Tao Bad Canary Commit Qua Git
+
+Build image tag `v4` vao minikube:
+
+```powershell
+Set-Location $ProjectAbs
 minikube image build -p w9 -t w9-api:4 app
+minikube image ls -p w9 | Select-String "w9-api"
 Set-Location E:\Xbrain\tf_learning
 ```
 
-Mo rollout:
+Doi desired state tu version tot `v3` sang bad canary `v4`:
 
 ```powershell
-notepad $AppPath
+(Get-Content $AppPath) `
+  -replace "image: w9-api:3", "image: w9-api:4" `
+  -replace "value: v3", "value: v4" `
+  -replace 'value: "0"', 'value: "1"' |
+  Set-Content -Path $AppPath -Encoding utf8
 ```
 
-Doi 3 gia tri:
-
-```yaml
-image: w9-api:3
-```
-
-Thanh:
-
-```yaml
-image: w9-api:4
-```
-
-Doi:
-
-```yaml
-- name: APP_VERSION
-  value: v3
-```
-
-Thanh:
-
-```yaml
-- name: APP_VERSION
-  value: v4
-```
-
-Doi:
-
-```yaml
-- name: FAIL_RATE
-  value: "0"
-```
-
-Thanh:
-
-```yaml
-- name: FAIL_RATE
-  value: "1"
-```
-
-Validate manifest truoc khi commit:
+Validate manifest:
 
 ```powershell
 kubectl kustomize $Project/apps/w9-api/overlays/dev |
   Select-String -Pattern "image: w9-api:4|value: v4|value: `"1`"|kind: Rollout|kind: AnalysisTemplate"
+git diff -- $AppPath
 ```
 
-Commit va push bad canary:
+Commit va push:
 
 ```powershell
 git add $AppPath
 git commit -m "test bad w9 canary"
 git push origin main
+git show --stat --oneline --name-only HEAD
 ```
 
-Chup evidence:
+Chup evidence `docs/image/01-git-commit.png` voi `git show` va diff bad canary.
 
-```text
-docs/image/01-git-commit.png
+Mo GitHub Actions page, doi workflow W9 pass, roi chup evidence `docs/image/02-actions-pass.png`:
+
+```powershell
+Start-Process "https://github.com/G-03-XBrain-Phase-2/hoangson-aws-accelerator-p2/actions"
 ```
 
 Refresh ArgoCD:
@@ -364,32 +469,33 @@ kubectl annotate application w9-api -n argocd argocd.argoproj.io/refresh=hard --
 kubectl get application w9-api -n argocd
 ```
 
-## 8. Tao Traffic De Canary Va Alert Co Metric
+## 11. Chay Canary, Traffic, Va Bat Loi
 
-Terminal 1: watch rollout.
+Terminal 1 - watch rollout:
 
 ```powershell
 kubectl get rollout w9-api -n demo -w
 ```
 
-Terminal 2: watch AnalysisRun.
+Terminal 2 - watch AnalysisRun:
 
 ```powershell
 kubectl get analysisrun -n demo -w
 ```
 
-Terminal 3: port-forward app.
+Terminal 3 - port-forward app:
 
 ```powershell
 kubectl port-forward svc/w9-api -n demo 8080:80
 ```
 
-Terminal 4: generate traffic lien tuc.
+Terminal 4 - generate traffic lien tuc:
 
 ```powershell
 1..1200 | ForEach-Object {
   try {
-    Invoke-RestMethod http://localhost:8080/api/status | Out-Null
+    $Response = Invoke-RestMethod http://localhost:8080/api/status
+    Write-Host "ok version=$($Response.version)"
   } catch {
     Write-Host "expected 500 from bad canary"
   }
@@ -399,25 +505,25 @@ Terminal 4: generate traffic lien tuc.
 
 Expected:
 
-- Co request tra 500 khi hit vao canary pod v4.
-- `AnalysisRun` fail vi success rate < 0.98.
-- Rollout bad canary bi abort.
+- Trong canary co request vao `v4` bi 500 vi `FAIL_RATE=1`.
+- `AnalysisRun` fail do success rate < `0.98`.
+- Rollout bi abort va traffic quay ve version tot.
 
-Kiem tra chi tiet:
+Sau khi thay fail/abort, chay:
 
 ```powershell
-kubectl describe rollout w9-api -n demo
+kubectl get rollout w9-api -n demo
+kubectl get analysisrun -n demo
 kubectl describe analysisrun -n demo
+kubectl describe rollout w9-api -n demo
 ```
 
 Chup evidence:
 
-```text
-docs/image/09-canary-analysis-failed.png
-docs/image/10-canary-auto-aborted.png
-```
+- `docs/image/09-canary-analysis-failed.png`: terminal co `AnalysisRun` phase `Failed`.
+- `docs/image/10-canary-auto-aborted.png`: terminal co rollout aborted/degraded va stable version van available.
 
-## 9. Kiem Tra Alert Fire Va Email Da Gui
+## 12. Kiem Tra Alert Firing Va Email
 
 Port-forward Alertmanager:
 
@@ -433,40 +539,40 @@ http://localhost:9093
 
 Expected:
 
-- Alert `W9ApiHighErrorRate` o trang Alertmanager.
+- Alert `W9ApiHighErrorRate` xuat hien.
 - Status la `Firing`.
 
-Neu muon check bang Prometheus API, port-forward Prometheus:
+Neu muon verify bang Prometheus API:
 
 ```powershell
 kubectl port-forward svc/kube-prometheus-stack-prometheus -n observability 9090:9090
 ```
 
-Query alert bang PowerShell:
+Terminal khac:
 
 ```powershell
 Invoke-RestMethod "http://localhost:9090/api/v1/query?query=ALERTS%7Balertname%3D%22W9ApiHighErrorRate%22%7D" |
   ConvertTo-Json -Depth 10
 ```
 
-Expected:
+Expected co:
 
-- Co series `alertstate: firing`.
+```text
+alertstate: firing
+```
 
 Kiem tra hop thu email ca nhan.
 
 Chup evidence:
 
-```text
-docs/image/07-alert-firing.png
-docs/image/08-alert-email.png
-```
+- `docs/image/07-alert-firing.png`: Alertmanager hoac Prometheus API hien firing.
+- `docs/image/08-alert-email.png`: email alert da nhan, che password/token neu co.
 
-## 10. Rollback Bang Git Revert Duoi 5 Phut
+## 13. Rollback Bang Git Revert Duoi 5 Phut
 
 Quan trong: lenh nay gia dinh bad canary commit la commit moi nhat.
 
-Chay timer rollback:
+Chay rollback timer:
 
 ```powershell
 $Start = Get-Date
@@ -492,134 +598,93 @@ Expected:
 Rollback seconds: < 300
 ```
 
-Kiem tra app ve ban tot:
+Kiem tra app da ve version tot:
 
 ```powershell
 Invoke-RestMethod http://localhost:8080/api/status
-```
-
-Expected:
-
-```text
-version: v3
-status: ok
+kubectl get applications -n argocd
+kubectl get rollout,pods -n demo
+git log --oneline -5
 ```
 
 Chup evidence:
 
-```text
-docs/image/11-git-revert-rollback-time.png
-docs/image/12-final-healthy.png
-```
+- `docs/image/11-git-revert-rollback-time.png`: terminal co `Rollback seconds`.
+- `docs/image/12-final-healthy.png`: ArgoCD/app/rollout final healthy, API `version: v3`.
 
-## 11. Clear Sau Demo - Bat Buoc
+## 14. Cleanup Bat Buoc Sau Demo
 
-### 11.1. Tat port-forward/watch
+Tat tat ca watch/port-forward bang `Ctrl+C`.
 
-Trong cac terminal dang watch hoac port-forward, nhan:
-
-```text
-Ctrl+C
-```
-
-### 11.2. Xoa SMTP secret khoi cluster
+Xoa SMTP secret khoi cluster:
 
 ```powershell
 kubectl delete secret alertmanager-smtp-auth -n demo --ignore-not-found
 ```
 
-### 11.3. Reset email placeholder trong Git
-
-Mo file:
+Neu da commit email that, reset placeholder trong Git:
 
 ```powershell
-notepad $AlertPath
-```
+(Get-Content $AlertPath) `
+  -replace [regex]::Escape($AlertTo), "CHANGE_ME_PERSONAL_EMAIL@example.com" `
+  -replace [regex]::Escape($AlertFrom), "CHANGE_ME_SENDER_EMAIL@example.com" |
+  Set-Content -Path $AlertPath -Encoding utf8
 
-Doi lai:
-
-```yaml
-to: CHANGE_ME_PERSONAL_EMAIL@example.com
-from: CHANGE_ME_SENDER_EMAIL@example.com
-authUsername: CHANGE_ME_SENDER_EMAIL@example.com
-```
-
-Commit va push:
-
-```powershell
+git diff -- $AlertPath
 git add $AlertPath
 git commit -m "reset w9 demo email placeholders"
 git push origin main
 kubectl annotate application w9-api -n argocd argocd.argoproj.io/refresh=hard --overwrite
 ```
 
-### 11.4. Kiem tra rollout da ve stable
+Kiem tra final:
 
 ```powershell
 kubectl get applications -n argocd
 kubectl get rollout,pods -n demo
 kubectl get alertmanagerconfig w9-api-email-alerts -n demo -o yaml
-```
-
-Expected:
-
-- `w9-api` `Synced/Healthy`.
-- Rollout `2/2`.
-- `FAIL_RATE` trong Git la `"0"`.
-- Email config da ve placeholder neu ban da reset.
-
-Kiem tra Git:
-
-```powershell
 git status --short
 git log --oneline -5
 ```
 
 Expected:
 
-- Khong co file demo dang modified/staged.
-- Commit history co bad canary commit va revert commit.
+- `w9-api` `Synced/Healthy`.
+- Rollout replicas ve `2`.
+- `rollout.yaml` o Git ve `image: w9-api:3`, `APP_VERSION=v3`, `FAIL_RATE="0"`.
+- SMTP secret da xoa.
+- Email config da reset placeholder neu ban khong muon luu email that.
 
-## 12. Optional Full Cleanup Neu Khong Can Giu Lab
+## 15. Optional Destroy Local Lab
 
-Chi chay neu muon xoa toan bo lab local:
+Chi chay sau khi da chup het evidence:
 
 ```powershell
-Set-Location E:\Xbrain\tf_learning\$Project
+Set-Location $ProjectAbs
 kubectl delete -f argocd/app-of-apps.yaml --ignore-not-found
 helm uninstall argocd -n argocd
-kubectl delete namespace argocd observability demo --ignore-not-found
+kubectl delete namespace argocd argo-rollouts observability demo --ignore-not-found
 minikube delete -p w9
 Set-Location E:\Xbrain\tf_learning
 ```
 
-Sau lenh nay, cluster/profile `w9` se bi xoa. Muon demo lai thi lam lai tu README/phase setup.
+## 16. Bang Evidence Cuoi
 
-## 13. Bang Evidence Cuoi Cung
+Dung dung ten file nay trong `EVIDENCE.md`:
 
-| Evidence | File nen chup |
+| Step | Screenshot |
 | --- | --- |
-| Git commit bad canary | `docs/image/01-git-commit.png` |
+| Bad canary Git commit | `docs/image/01-git-commit.png` |
 | GitHub Actions pass | `docs/image/02-actions-pass.png` |
-| ArgoCD Synced/Healthy | `docs/image/03-argocd-synced-healthy.png` |
+| ArgoCD synced healthy | `docs/image/03-argocd-synced-healthy.png` |
 | No drift self-heal | `docs/image/04-no-drift-self-heal.png` |
 | Reproduce from Git | `docs/image/05-reproduce-from-git.png` |
 | SLO query | `docs/image/06-slo-rule-query.png` |
 | Alert firing | `docs/image/07-alert-firing.png` |
-| Email received | `docs/image/08-alert-email.png` |
-| Analysis failed | `docs/image/09-canary-analysis-failed.png` |
+| Alert email | `docs/image/08-alert-email.png` |
+| Canary analysis failed | `docs/image/09-canary-analysis-failed.png` |
 | Canary auto-aborted | `docs/image/10-canary-auto-aborted.png` |
-| Git revert under 5 minutes | `docs/image/11-git-revert-rollback-time.png` |
-| Final healthy state | `docs/image/12-final-healthy.png` |
+| Git revert rollback time | `docs/image/11-git-revert-rollback-time.png` |
+| Final healthy | `docs/image/12-final-healthy.png` |
 
-Clip tot nhat:
-
-```text
-docs/video/01-canary-auto-abort-and-rollback.mp4
-```
-
-Noi dung clip:
-
-```text
-Git push bad version -> ArgoCD sync -> canary starts -> Prometheus metric fails -> AnalysisRun failed -> rollout aborted -> git revert -> healthy under 5 minutes
-```
+Khong can va khong nop video.

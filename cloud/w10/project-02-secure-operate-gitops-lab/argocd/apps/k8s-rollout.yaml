@@ -1,4 +1,4 @@
-# ArgoCD App: Argo Rollouts controller and CRDs.
+﻿# ArgoCD App: Argo Rollouts controller and CRDs.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -36,3 +36,4 @@ spec:
       kind: CustomResourceDefinition
       jsonPointers:
         - /spec/preserveUnknownFields
+

@@ -9,7 +9,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/G-03-XBrain-Phase-2/hoangson-aws-accelerator-p2.git
+    repoURL: https://github.com/Heaven229-c/w10-xbrain.git
     path: cloud/w10/project-02-secure-operate-gitops-lab/rbac
     targetRevision: main
   destination:
@@ -21,6 +21,7 @@ spec:
       selfHeal: true
     syncOptions:
       - ServerSideApply=true
+
 
 
 

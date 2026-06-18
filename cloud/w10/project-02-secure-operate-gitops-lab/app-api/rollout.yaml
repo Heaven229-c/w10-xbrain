@@ -21,14 +21,14 @@ spec:
     spec:
       containers:
         - name: api
-          image: ghcr.io/g-03-xbrain-phase-2/w10-api:0.0.1
+          image: ghcr.io/heaven229-c/w10-api:b1558d7
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
               protocol: TCP
           env:
             - name: VERSION
-              value: "v0.0.1"
+              value: "vb1558d7"
             - name: ERROR_RATE
               value: "0"
           livenessProbe:

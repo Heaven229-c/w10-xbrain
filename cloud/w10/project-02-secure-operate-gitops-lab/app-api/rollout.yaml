@@ -21,14 +21,14 @@ spec:
     spec:
       containers:
         - name: api
-          image: ghcr.io/heaven229-c/w10-api:9a82f97
+          image: ghcr.io/heaven229-c/w10-api:81ddeb0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
               protocol: TCP
           env:
             - name: VERSION
-              value: "v9a82f97"
+              value: "v81ddeb0"
             - name: ERROR_RATE
               value: "0"
             - name: DB_PASSWORD_FILE

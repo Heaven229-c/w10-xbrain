@@ -1,45 +1,42 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: demo-developer
+  name: developer
   namespace: demo
-  labels:
-    owner: platform-team
-    env: w10
 rules:
   - apiGroups: [""]
-    resources: ["pods", "services", "configmaps", "events"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
+    resources: ["pods", "services", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["apps"]
-    resources: ["deployments", "replicasets"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
-  - apiGroups: ["argoproj.io"]
-    resources: ["rollouts", "analysisruns"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: w10-sre-pod-operator
-  labels:
-    owner: platform-team
-    env: w10
+  name: sre
 rules:
   - apiGroups: [""]
-    resources: ["pods", "pods/log", "pods/exec", "events", "namespaces"]
-    verbs: ["get", "list", "watch", "create", "delete"]
-  - apiGroups: ["argoproj.io"]
-    resources: ["rollouts", "analysisruns"]
-    verbs: ["get", "list", "watch", "patch"]
+    resources: ["pods", "events", "namespaces", "nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/exec", "pods/portforward"]
+    verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: w10-cluster-viewer
-  labels:
-    owner: platform-team
-    env: w10
+  name: viewer
 rules:
-  - apiGroups: ["*"]
-    resources: ["*"]
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "events", "namespaces", "nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
     verbs: ["get", "list", "watch"]

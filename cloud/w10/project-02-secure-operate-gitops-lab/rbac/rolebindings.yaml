@@ -1,48 +1,39 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: alice-demo-developer
+  name: alice-developer
   namespace: demo
-  labels:
-    owner: platform-team
-    env: w10
 subjects:
   - kind: User
     name: alice
     apiGroup: rbac.authorization.k8s.io
 roleRef:
   kind: Role
-  name: demo-developer
+  name: developer
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: bob-sre-pod-operator
-  labels:
-    owner: platform-team
-    env: w10
+  name: bob-sre
 subjects:
   - kind: User
     name: bob
     apiGroup: rbac.authorization.k8s.io
 roleRef:
   kind: ClusterRole
-  name: w10-sre-pod-operator
+  name: sre
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: carol-cluster-viewer
-  labels:
-    owner: platform-team
-    env: w10
+  name: carol-viewer
 subjects:
   - kind: User
     name: carol
     apiGroup: rbac.authorization.k8s.io
 roleRef:
   kind: ClusterRole
-  name: w10-cluster-viewer
+  name: viewer
   apiGroup: rbac.authorization.k8s.io

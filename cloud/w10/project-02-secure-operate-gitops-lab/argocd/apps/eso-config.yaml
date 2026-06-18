@@ -1,0 +1,23 @@
+# ArgoCD App: SecretStore and ExternalSecret configuration.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: eso-config
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Heaven229-c/w10-xbrain.git
+    path: cloud/w10/project-02-secure-operate-gitops-lab/eso
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

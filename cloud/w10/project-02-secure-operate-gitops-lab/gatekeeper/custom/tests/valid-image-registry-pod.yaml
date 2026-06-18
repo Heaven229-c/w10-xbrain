@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: valid-image-registry
+  namespace: demo
+  labels:
+    owner: platform-team
+    env: w10
+spec:
+  containers:
+    - name: api
+      image: ghcr.io/heaven229-c/w10-api:b1558d7
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 50m
+          memory: 64Mi
+      securityContext:
+        runAsUser: 10001
+        runAsNonRoot: true

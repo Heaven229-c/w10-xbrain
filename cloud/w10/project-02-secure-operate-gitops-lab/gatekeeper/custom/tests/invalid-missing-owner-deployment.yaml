@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: invalid-missing-owner
+  namespace: demo
+  labels:
+    app: invalid-missing-owner
+    env: w10
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: invalid-missing-owner
+  template:
+    metadata:
+      labels:
+        app: invalid-missing-owner
+        env: w10
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/heaven229-c/w10-api:b1558d7
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
+          securityContext:
+            runAsUser: 10001
+            runAsNonRoot: true

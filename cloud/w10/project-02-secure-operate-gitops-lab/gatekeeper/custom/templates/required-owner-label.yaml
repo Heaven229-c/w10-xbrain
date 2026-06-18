@@ -1,0 +1,27 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequiredworkloadowner
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequiredWorkloadOwner
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            labelName:
+              type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequiredworkloadowner
+
+        violation[{"msg": msg}] {
+          label_name := object.get(input.parameters, "labelName", "owner")
+          labels := object.get(input.review.object.metadata, "labels", {})
+          value := object.get(labels, label_name, "")
+          value == ""
+          msg := sprintf("workload <%v> must include non-empty label <%v>", [input.review.object.metadata.name, label_name])
+        }

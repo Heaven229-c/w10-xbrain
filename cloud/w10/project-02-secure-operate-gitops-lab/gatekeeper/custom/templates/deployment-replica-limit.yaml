@@ -1,0 +1,27 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sdeploymentreplicalimit
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sDeploymentReplicaLimit
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            maxReplicas:
+              type: integer
+              minimum: 1
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sdeploymentreplicalimit
+
+        violation[{"msg": msg}] {
+          replicas := object.get(input.review.object.spec, "replicas", 1)
+          max_replicas := object.get(input.parameters, "maxReplicas", 5)
+          replicas > max_replicas
+          msg := sprintf("deployment <%v> requests %v replicas, max allowed is %v", [input.review.object.metadata.name, replicas, max_replicas])
+        }

@@ -1,0 +1,41 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sallowedimageregistry
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sAllowedImageRegistry
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            allowedPrefix:
+              type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sallowedimageregistry
+
+        violation[{"msg": msg}] {
+          container := input_containers[_]
+          allowed_prefix := object.get(input.parameters, "allowedPrefix", "ghcr.io/heaven229-c/")
+          not startswith(container.image, allowed_prefix)
+          msg := sprintf("container <%v> image <%v> is not allowed; image must start with <%v>", [container.name, container.image, allowed_prefix])
+        }
+
+        input_containers[c] {
+          podspec := input.review.object.spec
+          c := podspec.containers[_]
+        }
+
+        input_containers[c] {
+          podspec := input.review.object.spec.template.spec
+          c := podspec.containers[_]
+        }
+
+        input_containers[c] {
+          podspec := input.review.object.spec.jobTemplate.spec.template.spec
+          c := podspec.containers[_]
+        }

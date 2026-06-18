@@ -1,14 +1,23 @@
-# Optional Custom Gatekeeper Policy
+# Lab 03 - Custom Gatekeeper Policies
 
-The owner-label policy is kept in this folder as an optional extension.
-
-It is not synced by the default ArgoCD app path because the mentor scope requires four core policies:
+This folder contains custom ConstraintTemplates written for Lab 03.
 
 ```text
-1. disallow latest image tag
-2. require resources limits
-3. disallow root user
-4. disallow hostNetwork
+custom/
+├── templates/      # Custom ConstraintTemplate + Rego
+├── constraints/    # Custom Constraint objects
+└── tests/          # Reject/pass test manifests
 ```
 
-Enable the owner-label policy only if you want an extra challenge after the required demo passes.
+The policies are synced by ArgoCD through:
+
+```text
+argocd/apps/gatekeeper-custom-templates.yaml
+argocd/apps/gatekeeper-custom-constraints.yaml
+```
+
+Implemented custom policies:
+
+1. Reject Deployment when `spec.replicas > 5`.
+2. Require workload label `owner`.
+3. Allow images only from `ghcr.io/heaven229-c/`.

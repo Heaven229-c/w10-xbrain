@@ -1,0 +1,17 @@
+apiVersion: policy.sigstore.dev/v1beta1
+kind: ClusterImagePolicy
+metadata:
+  name: require-signed-w10-api
+  labels:
+    owner: platform-team
+    env: w10
+spec:
+  images:
+    - glob: "ghcr.io/heaven229-c/w10-api*"
+  authorities:
+    - key:
+        data: |
+          -----BEGIN PUBLIC KEY-----
+          MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2HgW4Z3d4UVcr5tT53hFkbQBZyIJ
+          lgizixLadISEZeMvIRhZsFgKH+jji/kf7fj0jyCWM2Fwzs6dPuG71bu7+g==
+          -----END PUBLIC KEY-----

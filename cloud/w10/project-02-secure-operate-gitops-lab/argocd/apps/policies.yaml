@@ -1,0 +1,23 @@
+# ArgoCD App: Sigstore image signature policies.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: policies
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Heaven229-c/w10-xbrain.git
+    path: cloud/w10/project-02-secure-operate-gitops-lab/policies
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cosign-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

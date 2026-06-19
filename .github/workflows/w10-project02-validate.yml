@@ -10,9 +10,11 @@ on:
       - 'cloud/w10/project-02-secure-operate-gitops-lab/argocd/**'
       - 'cloud/w10/project-02-secure-operate-gitops-lab/rbac/**'
       - 'cloud/w10/project-02-secure-operate-gitops-lab/gatekeeper/**'
-      - 'cloud/w10/project-02-secure-operate-gitops-lab/k8s-eso/**'
+      - 'cloud/w10/project-02-secure-operate-gitops-lab/eso/**'
       - 'cloud/w10/project-02-secure-operate-gitops-lab/image-policy/**'
-      - '.github/workflows/w10-validate.yml'
+      - 'cloud/w10/project-02-secure-operate-gitops-lab/policies/**'
+      - 'cloud/w10/project-02-secure-operate-gitops-lab/signing/**'
+      - '.github/workflows/w10-project02-validate.yml'
 
 jobs:
   validate:
@@ -38,5 +40,6 @@ jobs:
             ${PROJECT_DIR}/argocd/ \
             ${PROJECT_DIR}/rbac/ \
             ${PROJECT_DIR}/gatekeeper/ \
-            ${PROJECT_DIR}/k8s-eso/ \
-            ${PROJECT_DIR}/image-policy/
+            ${PROJECT_DIR}/eso/ \
+            ${PROJECT_DIR}/image-policy/ \
+            ${PROJECT_DIR}/policies/

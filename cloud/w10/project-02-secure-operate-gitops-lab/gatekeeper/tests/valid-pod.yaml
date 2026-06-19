@@ -10,8 +10,8 @@ spec:
   securityContext:
     runAsNonRoot: true
   containers:
-    - name: nginx
-      image: nginx:1.27.3
+    - name: api
+      image: ghcr.io/heaven229-c/w10-api:b1558d7
       resources:
         requests:
           cpu: 10m

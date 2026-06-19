@@ -8,8 +8,8 @@ metadata:
     env: w10
 spec:
   containers:
-    - name: nginx
-      image: nginx:latest
+    - name: api
+      image: ghcr.io/heaven229-c/w10-api:latest
       resources:
         requests:
           cpu: 10m
